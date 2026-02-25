@@ -46,11 +46,11 @@ def _get_articulation_ee_pose(env, robot_name: str | None, ee_link_name: str | N
     body_quat = getattr(data, "body_quat_w", None) or getattr(data, "root_quat_w", None)
     if body_pos is None or body_quat is None:
         return None, None
-    # If batched (num_envs, num_bodies, 3), EE is usually last body or by name
+    # If batched (num_envs, num_bodies, 3), EE is last body or resolved by name (e.g. gripper_link for SO-101)
     if hasattr(body_pos, "shape") and len(body_pos.shape) >= 2:
-        if ee_link_name and hasattr(art, "body_names"):
-            names = list(getattr(art, "body_names", []))
-            idx = names.index(ee_link_name) if ee_link_name in names else -1
+        names = list(getattr(art, "body_names", [])) or list(getattr(data, "body_names", []))
+        if ee_link_name and names and ee_link_name in names:
+            idx = names.index(ee_link_name)
         else:
             idx = -1
         pos = body_pos[..., idx, :] if body_pos.shape[-2] > 1 else body_pos[..., 0, :]

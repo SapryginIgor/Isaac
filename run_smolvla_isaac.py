@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Run SmolVLA policy in an Isaac Lab SO-101 env (lift-cube or reach).
-Requires: Isaac Sim + Isaac Lab installed, and a community SO-101 env (e.g. isaac_so_arm101) registered.
-Run from Isaac Lab: ./isaaclab.sh -p /path/to/run_smolvla_isaac.py --task <task_id> [options]
+Uses the isaac_so_arm101 extension in-repo (SO-101 URDF and tasks).
+Run from Isaac Lab: ./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py --task <task_id> [options]
 """
 
 from __future__ import annotations
@@ -11,10 +11,19 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add project root so env_wrapper and adapters can be imported when run via isaaclab.sh -p script.py
+# Project root (directory containing this script and isaac_so_arm101/)
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
+# Register SO-101 envs from in-repo extension (reach + lift)
+_EXTENSION_SRC = _SCRIPT_DIR / "isaac_so_arm101" / "src"
+if _EXTENSION_SRC.exists() and str(_EXTENSION_SRC) not in sys.path:
+    sys.path.insert(0, str(_EXTENSION_SRC))
+try:
+    import isaac_so_arm101.tasks.reach  # noqa: F401  # registers Isaac-SO-ARM*-Reach-v0
+    import isaac_so_arm101.tasks.lift   # noqa: F401  # registers Isaac-SO-ARM*-Lift-Cube-v0
+except ImportError:
+    pass  # extension not available; gym.make will fail with a clear error
 
 import gymnasium as gym
 import numpy as np
@@ -25,15 +34,15 @@ from env_wrapper import IsaacEEWrapper
 
 def parse_args():
     p = argparse.ArgumentParser(description="SmolVLA inference on Isaac Lab SO-101 env")
-    p.add_argument("--task", type=str, default="SO-ARM100-Reach-v0", help="Gym task id (e.g. SO-ARM100-Reach-v0 or SO-101-Lift-Cube-v0)")
+    p.add_argument("--task", type=str, default="Isaac-SO-ARM101-Lift-Cube-v0", help="Gym task id (e.g. Isaac-SO-ARM101-Lift-Cube-v0, Isaac-SO-ARM101-Reach-v0)")
     p.add_argument("--headless", action="store_true", help="Run without GUI")
     p.add_argument("--num_envs", type=int, default=1, help="Number of parallel envs")
     p.add_argument("--policy", type=str, default="lerobot/smolvla_base", help="HuggingFace policy repo or path")
     p.add_argument("--instruction", type=str, default="Pick the cube.", help="Language instruction for the policy")
     p.add_argument("--max_steps", type=int, default=500, help="Max steps per episode")
     p.add_argument("--episodes", type=int, default=3, help="Number of episodes to run")
-    p.add_argument("--robot_name", type=str, default=None, help="Name of robot articulation in scene (for EE wrapper)")
-    p.add_argument("--ee_link_name", type=str, default=None, help="End-effector link name (for EE wrapper)")
+    p.add_argument("--robot_name", type=str, default="robot", help="Name of robot articulation in scene (isaac_so_arm101 uses 'robot')")
+    p.add_argument("--ee_link_name", type=str, default="gripper_link", help="End-effector link name (SO-101: gripper_link)")
     p.add_argument("--no_ee_in_obs", action="store_true", help="Do not add ee_pos/ee_quat/delta to obs dict")
     return p.parse_args()
 
@@ -64,10 +73,10 @@ def main():
         env = gym.make(args.task, num_envs=args.num_envs, headless=args.headless)
     except Exception as e:
         print(
-            "Failed to create env. Ensure you run this script with Isaac Lab: ./isaaclab.sh -p run_smolvla_isaac.py ...",
+            "Failed to create env. Run this script with Isaac Lab: ./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py ...",
             file=sys.stderr,
         )
-        print("Also ensure a SO-101 task is installed (e.g. isaac_so_arm101) and the task id is correct.", file=sys.stderr)
+        print("Ensure isaac_so_arm101 is on PYTHONPATH (in-repo: isaac_so_arm101/src is added automatically).", file=sys.stderr)
         raise SystemExit(1) from e
 
     env = IsaacEEWrapper(
