@@ -10,10 +10,63 @@ import numpy as np
 from typing import Any
 
 
-# Common keys used by LeRobot/SmolVLA for observations (dataset-dependent)
-IMAGE_KEYS = ("observation.images.top", "observation.images.wrist", "observation.images.front", "observation.images.side")
+# SmolVLA policy expects these image keys; shape (B, C, H, W) with B=1 for single-step
+CAMERA_KEYS = ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3")
+IMAGE_SHAPE = (3, 256, 256)  # CHW per image
+BATCH_IMAGE_SHAPE = (1, 3, 256, 256)  # BCHW for policy
 STATE_KEY = "observation.state"
 LANGUAGE_KEY = "language_instruction"
+TASK_KEY = "task"  # tokenizer_processor expects this in complementary_data
+
+
+def _to_numpy(x: Any) -> np.ndarray:
+    if hasattr(x, "cpu"):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
+
+
+def _resize_to_chw(img: np.ndarray, target_hw: tuple[int, int] = (256, 256)) -> np.ndarray:
+    """Resize image to target (H, W) and return as (C, H, W) float in [0, 1] or uint8."""
+    img = _to_numpy(img)
+    if img.ndim == 2:
+        img = img[:, :, np.newaxis]
+    # (H, W, C) -> (C, H, W)
+    if img.ndim == 3 and img.shape[-1] in (1, 3):
+        img = np.transpose(img, (2, 0, 1))
+    c, h, w = img.shape[0], img.shape[1], img.shape[2]
+    if (h, w) == target_hw:
+        return img.astype(np.float32) / 255.0 if img.dtype == np.uint8 else img.astype(np.float32)
+    # simple numpy resize: index with linear sampling
+    y = np.linspace(0, h - 1, target_hw[0]).astype(np.int32)
+    x = np.linspace(0, w - 1, target_hw[1]).astype(np.int32)
+    out = img[:, y, :][:, :, x]  # (C, target_hw[0], target_hw[1])
+    return out.astype(np.float32) / 255.0 if out.dtype == np.uint8 else out.astype(np.float32)
+
+
+def _gather_images(obs: dict[str, Any]) -> list[np.ndarray]:
+    """Collect up to 3 images from obs (keys that look like image data: 2D or 3D with H,W > 1)."""
+    images = []
+    for k in (
+        "observation.images.camera1", "observation.images.camera2", "observation.images.camera3",
+        "rgb", "image", "cameras.rgb", "observation.images.top", "observation.images.wrist",
+    ):
+        if k not in obs:
+            continue
+        v = obs[k]
+        v = _to_numpy(v)
+        if v.ndim == 2:
+            pass
+        elif v.ndim == 3 and (v.shape[-1] in (1, 3) or v.shape[0] in (1, 3)):
+            if min(v.shape) < 2:
+                continue
+        else:
+            continue
+        if v.size == 0:
+            continue
+        images.append(v)
+        if len(images) >= 3:
+            break
+    return images
 
 
 def isaac_obs_to_policy_frame(
@@ -24,31 +77,29 @@ def isaac_obs_to_policy_frame(
 ) -> dict[str, Any]:
     """
     Build a frame-like dict for SmolVLA preprocessor from Isaac Lab env observation.
-
-    Isaac Lab may return obs as a flat dict with keys like "joint_pos", "rgb_image", etc.,
-    or from a ManagerBased env with concatenated terms. We produce keys that match
-    typical LeRobot datasets: observation.images.<view>, observation.state, language_instruction.
-
-    Args:
-        obs: Raw observation dict from wrapped Isaac env (may include ee_pos, ee_quat, images).
-        language_instruction: Task instruction string.
-        image_key_map: Optional mapping from Isaac key -> LeRobot key, e.g. {"rgb": "observation.images.top"}.
-        state_keys: Optional list of keys to concatenate into observation.state (default: joint + ee).
+    Policy expects observation.images.camera1, camera2, camera3 with shape (3, 256, 256).
     """
-    frame = {LANGUAGE_KEY: language_instruction}
+    frame = {
+        LANGUAGE_KEY: language_instruction,
+        TASK_KEY: language_instruction,
+    }
     image_key_map = image_key_map or {}
-    # Default: look for common Isaac Lab / SO-101 image keys
-    for isaac_key in ("rgb", "image", "cameras.rgb", "observation.images.top", "observation.images.wrist"):
-        if isaac_key in obs:
-            key = image_key_map.get(isaac_key, "observation.images.top")
-            frame[key] = obs[isaac_key]
-            break
-    # Second view if present
-    for isaac_key in ("rgb_2", "image_2", "observation.images.wrist", "observation.images.side"):
-        if isaac_key in obs and isaac_key != frame.get("observation.images.top"):
-            key = image_key_map.get(isaac_key, "observation.images.wrist")
-            frame[key] = obs[isaac_key]
-            break
+    images = _gather_images(obs)
+    if not images:
+        images = [np.zeros((3, 256, 256), dtype=np.float32)]
+    # Resize to (3, 256, 256); duplicate first image if we have fewer than 3 views
+    resized = []
+    for i in range(3):
+        img = _resize_to_chw(images[min(i, len(images) - 1)], (IMAGE_SHAPE[1], IMAGE_SHAPE[2]))
+        if img.shape[0] == 1:
+            img = np.repeat(img, 3, axis=0)
+        resized.append(img.astype(np.float32))
+    # Policy expects (B, C, H, W); add batch dim so each is (1, 3, 256, 256)
+    for key, img in zip(CAMERA_KEYS, resized):
+        frame[key] = np.expand_dims(img, axis=0)
+    for src, dst in image_key_map.items():
+        if src in frame and dst != src:
+            frame[dst] = frame.pop(src)
     # State: concatenate joint positions, EE pose, and optionally deltas (SmolVLA often uses proprio)
     state_parts = []
     if state_keys:
@@ -64,9 +115,11 @@ def isaac_obs_to_policy_frame(
             if k in obs:
                 state_parts.append(np.asarray(obs[k]).flatten())
     if state_parts:
-        frame[STATE_KEY] = np.concatenate(state_parts).astype(np.float32)
+        state = np.concatenate(state_parts).astype(np.float32)
     else:
-        frame[STATE_KEY] = np.zeros(0, dtype=np.float32)
+        state = np.zeros(0, dtype=np.float32)
+    # Policy expects (batch, state_dim); add batch dim
+    frame[STATE_KEY] = np.expand_dims(state, axis=0)
     return frame
 
 

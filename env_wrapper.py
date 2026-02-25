@@ -41,9 +41,13 @@ def _get_articulation_ee_pose(env, robot_name: str | None, ee_link_name: str | N
     data = getattr(art, "data", None)
     if data is None:
         return None, None
-    # Isaac Lab articulation: body_pos_w, body_quat_w for each body
-    body_pos = getattr(data, "body_pos_w", None) or getattr(data, "root_pos_w", None)
-    body_quat = getattr(data, "body_quat_w", None) or getattr(data, "root_quat_w", None)
+    # Isaac Lab articulation: body_pos_w, body_quat_w for each body (avoid "or" with tensors)
+    body_pos = getattr(data, "body_pos_w", None)
+    if body_pos is None:
+        body_pos = getattr(data, "root_pos_w", None)
+    body_quat = getattr(data, "body_quat_w", None)
+    if body_quat is None:
+        body_quat = getattr(data, "root_quat_w", None)
     if body_pos is None or body_quat is None:
         return None, None
     # If batched (num_envs, num_bodies, 3), EE is last body or resolved by name (e.g. gripper_link for SO-101)
@@ -56,8 +60,8 @@ def _get_articulation_ee_pose(env, robot_name: str | None, ee_link_name: str | N
         pos = body_pos[..., idx, :] if body_pos.shape[-2] > 1 else body_pos[..., 0, :]
         quat = body_quat[..., idx, :] if body_quat.shape[-2] > 1 else body_quat[..., 0, :]
         # Squeeze to (3,) and (4,) for single env
-        pos = np.asarray(pos).reshape(-1, 3)[0]
-        quat = np.asarray(quat).reshape(-1, 4)[0]
+        pos = np.asarray(pos.cpu()).reshape(-1, 3)[0]
+        quat = np.asarray(quat.cpu()).reshape(-1, 4)[0]
     else:
         pos = np.asarray(body_pos).reshape(-1)[:3]
         quat = np.asarray(body_quat).reshape(-1)[:4]
