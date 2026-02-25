@@ -9,7 +9,20 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
+
+# #region agent log
+def _dbg(msg: str, data: dict, hypothesis_id: str = ""):
+    import json
+    try:
+        _logpath = Path(__file__).resolve().parent / ".cursor" / "debug.log"
+        _logpath.parent.mkdir(parents=True, exist_ok=True)
+        with open(_logpath, "a") as f:
+            f.write(json.dumps({"message": msg, "data": data, "hypothesisId": hypothesis_id, "timestamp": __import__("time").time()}) + "\n")
+    except Exception:
+        pass
+# #endregion
 
 # Project root (directory containing this script and isaac_so_arm101/)
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -19,11 +32,17 @@ if str(_SCRIPT_DIR) not in sys.path:
 _EXTENSION_SRC = _SCRIPT_DIR / "isaac_so_arm101" / "src"
 if _EXTENSION_SRC.exists() and str(_EXTENSION_SRC) not in sys.path:
     sys.path.insert(0, str(_EXTENSION_SRC))
+_ext_import_ok = False
+_ext_import_err = None
 try:
     import isaac_so_arm101.tasks.reach  # noqa: F401  # registers Isaac-SO-ARM*-Reach-v0
     import isaac_so_arm101.tasks.lift   # noqa: F401  # registers Isaac-SO-ARM*-Lift-Cube-v0
-except ImportError:
-    pass  # extension not available; gym.make will fail with a clear error
+    _ext_import_ok = True
+except ImportError as e:
+    _ext_import_err = f"{type(e).__name__}: {e}"
+# #region agent log
+_dbg("extension_path_and_import", {"script_dir": str(_SCRIPT_DIR), "extension_src": str(_EXTENSION_SRC), "extension_src_exists": _EXTENSION_SRC.exists(), "ext_import_ok": _ext_import_ok, "ext_import_err": _ext_import_err}, "H1")
+# #endregion
 
 import gymnasium as gym
 import numpy as np
@@ -69,9 +88,17 @@ def main():
     )
 
     # Create Isaac Lab env (must be run via isaaclab.sh so that Isaac Lab and SO-101 task are available)
+    # #region agent log
+    _reg = getattr(getattr(gym, "envs", None), "registry", None)
+    _ids = [k for k in (_reg.keys() if _reg else []) if "SO" in k or "Isaac" in k][:20]
+    _dbg("gym_make_call", {"task": args.task, "num_envs": args.num_envs, "headless": args.headless, "task_in_registry": args.task in (_reg or {}), "sample_registry_ids": _ids}, "H2")
+    # #endregion
     try:
         env = gym.make(args.task, num_envs=args.num_envs, headless=args.headless)
     except Exception as e:
+        # #region agent log
+        _dbg("gym_make_failed", {"exc_type": type(e).__name__, "exc_msg": str(e), "traceback": traceback.format_exc()}, "H3")
+        # #endregion
         print(
             "Failed to create env. Run this script with Isaac Lab: ./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py ...",
             file=sys.stderr,

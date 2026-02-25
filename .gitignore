@@ -37,6 +37,9 @@ Thumbs.db
 *.usd
 *.usda
 
+# Debug logs (instrumentation)
+.cursor/
+
 # LeRobot / HF cache (optional; uncomment to ignore)
 # .cache/
 # huggingface/
