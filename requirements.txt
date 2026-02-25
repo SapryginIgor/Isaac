@@ -1,0 +1,8 @@
+# Extra deps when running with Isaac Lab's Python (Isaac Sim + Isaac Lab installed separately).
+# Install: pip install -r requirements.txt (inside Isaac Lab env or after sourcing isaaclab)
+gymnasium>=0.29.0
+numpy>=1.24.0
+torch>=2.0.0
+huggingface_hub>=0.20.0
+# SmolVLA policy loading and inference
+lerobot[smolvla]>=0.4.0

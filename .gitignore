@@ -1,0 +1,42 @@
+# Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual envs
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Logs and checkpoints
+logs/
+*.ckpt
+*.pt
+*.pth
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Isaac / Omniverse (if any local cache)
+.isaac/
+*.usd
+*.usda
+
+# LeRobot / HF cache (optional; uncomment to ignore)
+# .cache/
+# huggingface/
