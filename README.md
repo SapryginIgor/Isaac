@@ -1,6 +1,6 @@
 # Pure Isaac SO-101 + SmolVLA inference
 
-Isaac Lab SO-101 pick-cube (or reach) environment with **SmolVLA** as an inference-only policy. No LeRobot/LeIsaac environment stack; simulation is pure Isaac Lab. End-effector position and deltas are exposed via a thin wrapper.
+Isaac Lab SO-101 pick-cube (or reach) environment with **SmolVLA** as an inference-only policy. Simulation is pure Isaac Lab. End-effector position and deltas are exposed via a thin wrapper.
 
 **SO-101** is provided by the **isaac_so_arm101** extension included in this repo (robot URDF, reach and lift-cube tasks). The run script automatically registers its envs when you run from the Isaac directory.
 
