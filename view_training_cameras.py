@@ -51,21 +51,69 @@ def main():
         default=0,
         help="Episode index to sample from (default: 0)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print Python path, lerobot location, and full traceback on import errors",
+    )
     args = parser.parse_args()
 
-    try:
-        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-    except ImportError:
-        print(
-            "LeRobot is required. Install with: pip install lerobot",
-            file=sys.stderr,
-        )
+    if args.debug:
+        print(f"Python: {sys.executable}", file=sys.stderr)
+        try:
+            import lerobot
+            print(f"lerobot: {getattr(lerobot, '__file__', 'no __file__')}", file=sys.stderr)
+        except ImportError as e:
+            print(f"lerobot import failed: {e}", file=sys.stderr)
+
+    # Try multiple import paths (lerobot package layout varies by version)
+    LeRobotDataset = None
+    for import_path in (
+        "lerobot.common.datasets.lerobot_dataset",
+        "lerobot.common.datasets",
+        "lerobot.datasets.lerobot_dataset",
+        "lerobot.datasets",
+    ):
+        try:
+            mod = __import__(import_path, fromlist=["LeRobotDataset"])
+            LeRobotDataset = getattr(mod, "LeRobotDataset", None)
+            if LeRobotDataset is not None:
+                if args.debug:
+                    print(f"Using LeRobotDataset from {import_path}", file=sys.stderr)
+                break
+        except Exception as e:
+            if args.debug:
+                import traceback
+                print(f"Import {import_path} failed: {e}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+            continue
+    if LeRobotDataset is None:
+        try:
+            import lerobot
+            print(
+                f"LeRobot is installed (version {getattr(lerobot, '__version__', 'unknown')}) but LeRobotDataset not found.\n"
+                "Try: pip install -U 'lerobot[dataset]' or pip install -U lerobot",
+                file=sys.stderr,
+            )
+        except ImportError:
+            print(
+                "LeRobot is not installed or not on this Python's path.\n"
+                f"Python: {sys.executable}\n"
+                "Install with: pip install lerobot\n"
+                "Run this script with the same Python that has lerobot (e.g. which python; python view_training_cameras.py).",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Loading dataset: {args.repo_id}")
-    dataset = LeRobotDataset(args.repo_id)
+    try:
+        dataset = LeRobotDataset(args.repo_id)
+    except Exception as e:
+        print(f"Failed to load dataset: {e}", file=sys.stderr)
+        print("If using Hugging Face Hub, ensure you can reach it (e.g. huggingface-cli login if needed).", file=sys.stderr)
+        sys.exit(1)
 
     # Find frame indices: from the chosen episode if possible, else first frames
     n_total = len(dataset)
