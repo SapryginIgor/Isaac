@@ -68,7 +68,19 @@ def main():
         raise SystemExit(1) from e
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[Policy] Loading from: {args_cli.policy}")
     policy = SmolVLAPolicy.from_pretrained(args_cli.policy).to(device).eval()
+    # Weight fingerprint: ensure weights are loaded (same repo => same norm; different => different)
+    with torch.inference_mode():
+        total_norm = 0.0
+        n_params = 0
+        for p in policy.parameters():
+            total_norm += p.float().norm().item() ** 2
+            n_params += 1
+            if n_params >= 10:
+                break
+        weight_fingerprint = total_norm ** 0.5
+    print(f"[Policy] Loaded. Weight fingerprint (norm of first 10 params): {weight_fingerprint:.6f}")
     preprocess, postprocess = make_pre_post_processors(
         policy.config,
         args_cli.policy,
@@ -126,6 +138,9 @@ def main():
                 action = policy.select_action(batch)
             action = postprocess(action)
             action = action.cpu().numpy() if hasattr(action, "cpu") else np.asarray(action)
+            if ep == 0 and step == 0:
+                a = np.asarray(action).flatten()
+                print(f"[Policy] First-step action stats: min={a.min():.4f} max={a.max():.4f} mean={a.mean():.4f} (near zero => check model/obs)")
             env_action = policy_action_to_env(action, env_action_space_shape=action_shape, clip=True)
             if env_action.ndim == 1:
                 env_action = np.broadcast_to(env_action, (num_envs, env_action.shape[0])).copy()
