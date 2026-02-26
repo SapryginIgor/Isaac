@@ -50,7 +50,13 @@ def isaac_obs_to_policy_frame(
     language_instruction: str = "Pick the cube.",
     image_key_map: dict[str, str] | None = None,
     state_keys: list[str] | None = None,
+    observation_state_size: int | None = None,
 ) -> dict[str, Any]:
+    """
+    Build a policy frame from Isaac env observation.
+    observation_state_size: if set, state is truncated/padded to this length to match
+    the model's normalization (e.g. 6 for lerobot/svla_so101_pickplace fine-tuned SmolVLA).
+    """
     frame = {LANGUAGE_KEY: language_instruction, TASK_KEY: language_instruction}
     image_key_map = image_key_map or {}
     images = _gather_images(obs)
@@ -72,6 +78,12 @@ def isaac_obs_to_policy_frame(
     keys = state_keys if state_keys else default_state_keys
     state_parts = [np.asarray(obs[k]).flatten() for k in keys if k in obs]
     state = np.concatenate(state_parts).astype(np.float32) if state_parts else np.zeros(0, dtype=np.float32)
+    if observation_state_size is not None:
+        n = observation_state_size
+        if state.shape[0] >= n:
+            state = state[:n].astype(np.float32)
+        else:
+            state = np.pad(state, (0, n - state.shape[0]), mode="constant", constant_values=0.0).astype(np.float32)
     frame[STATE_KEY] = np.expand_dims(state, axis=0)
     return frame
 

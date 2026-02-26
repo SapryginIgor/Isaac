@@ -29,6 +29,8 @@ parser.add_argument("--episodes", type=int, default=3, help="Number of episodes 
 parser.add_argument("--robot_name", type=str, default="robot", help="Robot articulation name in scene")
 parser.add_argument("--ee_link_name", type=str, default="gripper_link", help="End-effector link name (SO-101: gripper_link)")
 parser.add_argument("--no_ee_in_obs", action="store_true", help="Do not add ee_pos/ee_quat/delta to obs dict")
+parser.add_argument("--observation_state_size", type=int, default=6,
+                    help="Observation state vector length to match model normalization (default 6 for svla_so101_pickplace)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -95,7 +97,11 @@ def main():
                 single_obs = {k: (v[0] if v.shape[:1] == (num_envs,) else v) for k, v in obs.items()}
             else:
                 single_obs = {"obs": obs[0] if obs.shape[:1] == (num_envs,) else obs}
-            frame = isaac_obs_to_policy_frame(single_obs, language_instruction=args_cli.instruction)
+            frame = isaac_obs_to_policy_frame(
+                single_obs,
+                language_instruction=args_cli.instruction,
+                observation_state_size=args_cli.observation_state_size,
+            )
             batch = preprocess(frame)
             for k, v in batch.items():
                 if isinstance(v, np.ndarray):
