@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""
+Load the Isaac Lab SO-101 env with cameras enabled, run one reset, and save
+the rendered camera images to PNGs. Use this to inspect how the env's
+side/up (or other) camera views look.
+
+Usage:
+  ./isaaclab.sh -p save_env_cameras.py
+  ./isaaclab.sh -p save_env_cameras.py --task Isaac-SO-ARM101-Lift-Cube-v0 --output_dir ./my_cameras
+  ./isaaclab.sh -p save_env_cameras.py --num_envs 2   # save cameras for env 0 and env 1
+
+Requires: run with isaaclab.sh (Isaac Sim). Cameras are enabled automatically.
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+from isaaclab.app import AppLauncher
+
+# Project root
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+_EXTENSION_SRC = _SCRIPT_DIR / "isaac_so_arm101" / "src"
+if _EXTENSION_SRC.exists() and str(_EXTENSION_SRC) not in sys.path:
+    sys.path.insert(0, str(_EXTENSION_SRC))
+
+parser = argparse.ArgumentParser(description="Save env camera renders to PNGs")
+parser.add_argument("--task", type=str, default="Isaac-SO-ARM101-Lift-Cube-v0", help="Gym task id")
+parser.add_argument("--num_envs", type=int, default=1, help="Number of envs (saves first env's cameras by default)")
+parser.add_argument("--output_dir", type=str, default="env_camera_samples", help="Directory to save PNGs")
+parser.add_argument("--env_index", type=int, default=0, help="Which env's cameras to save (0 to num_envs-1)")
+AppLauncher.add_app_launcher_args(parser)
+args_cli = parser.parse_args()
+
+# Force cameras on so we get image observations
+args_cli.enable_cameras = True
+
+app_launcher = AppLauncher(args_cli)
+simulation_app = app_launcher.app
+
+import gymnasium as gym
+import numpy as np
+
+import isaac_so_arm101.tasks.reach  # noqa: F401
+import isaac_so_arm101.tasks.lift   # noqa: F401
+from isaaclab_tasks.utils import parse_env_cfg
+
+from env_wrapper import IsaacEEWrapper
+
+
+def _flatten_obs(obs, prefix=""):
+    """Flatten nested dict to dotted keys."""
+    out = {}
+    for k, v in obs.items():
+        key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict) and not (hasattr(v, "shape") or hasattr(v, "dtype")):
+            out.update(_flatten_obs(v, key))
+        else:
+            out[key] = v
+    return out
+
+
+def _is_image_array(arr):
+    if not hasattr(arr, "shape") or not hasattr(arr, "dtype"):
+        return False
+    arr = np.asarray(arr)
+    if arr.ndim not in (3, 4):
+        return False
+    # (N,H,W,C) or (H,W,C) or (N,C,H,W) or (C,H,W)
+    if arr.ndim == 4:
+        return arr.shape[-1] == 3 or arr.shape[1] == 3
+    return arr.shape[-1] == 3 or arr.shape[0] == 3
+
+
+def _to_uint8_rgb(img: np.ndarray, env_index: int = 0) -> np.ndarray:
+    """Extract one env's image as (H,W,3) uint8."""
+    img = np.asarray(img)
+    if hasattr(img, "cpu"):
+        img = img.cpu().numpy()
+    if img.ndim == 4:
+        img = img[env_index]
+    # (C,H,W) -> (H,W,C)
+    if img.shape[0] in (1, 3) and img.ndim == 3:
+        img = np.transpose(img, (1, 2, 0))
+    if img.shape[-1] == 1:
+        img = np.repeat(img, 3, axis=-1)
+    if img.dtype != np.uint8:
+        if img.max() <= 1.0:
+            img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+        else:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+    return img
+
+
+def main():
+    task_id = args_cli.task
+    reg = gym.envs.registry
+    if task_id not in reg and not task_id.endswith("-v0"):
+        alt = f"{task_id.rstrip('-v0')}-v0"
+        if alt in reg:
+            task_id = alt
+
+    env_cfg = parse_env_cfg(task_id, device=args_cli.device, num_envs=args_cli.num_envs)
+    env = gym.make(task_id, cfg=env_cfg)
+    env = IsaacEEWrapper(
+        env,
+        robot_name="robot",
+        ee_link_name="gripper_link",
+        add_ee_to_obs=True,
+    )
+
+    out_dir = Path(args_cli.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[save_env_cameras] Task={task_id} num_envs={args_cli.num_envs} output_dir={out_dir.absolute()}")
+
+    obs, _ = env.reset()
+    flat = _flatten_obs(obs)
+    env_index = min(args_cli.env_index, args_cli.num_envs - 1)
+
+    try:
+        from PIL import Image
+    except ImportError:
+        print("PIL not found. Install with: pip install Pillow", file=sys.stderr)
+        sys.exit(1)
+
+    saved = 0
+    for key, value in flat.items():
+        if not _is_image_array(value):
+            continue
+        img = _to_uint8_rgb(value, env_index)
+        safe_name = key.replace(".", "_").replace(" ", "_")
+        path = out_dir / f"{safe_name}.png"
+        Image.fromarray(img).save(path)
+        print(f"  Saved {path} ({img.shape[0]}x{img.shape[1]})")
+        saved += 1
+
+    env.close()
+    if saved == 0:
+        print("[save_env_cameras] No image observations found. Ensure the task has cameras and --enable_cameras is set.")
+        print("  Observation keys:", list(flat.keys()))
+    else:
+        print(f"[save_env_cameras] Done. Saved {saved} image(s) to {out_dir.absolute()}")
+
+
+if __name__ == "__main__":
+    main()
+    simulation_app.close()

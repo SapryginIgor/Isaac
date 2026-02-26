@@ -80,12 +80,14 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
-    # Cameras for vision policies (side and up views of table/robot)
+    # Cameras for vision policies: match LeRobot/svla_so101_pickplace training views
+    # - Side: oblique, slightly top-down (medium height), full gripper + workspace in frame
+    # - Up: above and to the right of the arm, looking down at the table
     camera_side = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/CameraSide",
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.35, 0.5, 0.28),
-            rot=(0.707, -0.707, 0.0, 0.0),
+            pos=(0.32, 0.45, 0.30),
+            rot=(0.82, 0.56, 0.0, 0.0),
             convention="world",
         ),
         data_types=["rgb"],
@@ -101,8 +103,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     camera_up = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/CameraUp",
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.4, 0.0, 0.65),
-            rot=(0.0, 1.0, 0.0, 0.0),
+            pos=(0.52, 0.48, 0.10),
+            rot=(0.707, -0.707, 0.0, 0.0),
             convention="world",
         ),
         data_types=["rgb"],
