@@ -5,6 +5,7 @@ Usage: ./isaaclab.sh -p /path/to/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lif
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -31,6 +32,11 @@ parser.add_argument("--ee_link_name", type=str, default="gripper_link", help="En
 parser.add_argument("--no_ee_in_obs", action="store_true", help="Do not add ee_pos/ee_quat/delta to obs dict")
 parser.add_argument("--observation_state_size", type=int, default=6,
                     help="Observation state vector length to match model normalization (default 6 for svla_so101_pickplace)")
+parser.add_argument("--rename_map", type=str, default=None,
+                    help='JSON map env_key->policy_key, e.g. \'{"observation.images.side": "observation.images.camera1", '
+                    '"observation.images.up": "observation.images.camera2"}\'')
+parser.add_argument("--empty_cameras", type=int, default=1,
+                    help="Number of trailing policy camera slots to fill with zeros (default 1 for SmolVLA side+up+empty)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -97,10 +103,15 @@ def main():
                 single_obs = {k: (v[0] if v.shape[:1] == (num_envs,) else v) for k, v in obs.items()}
             else:
                 single_obs = {"obs": obs[0] if obs.shape[:1] == (num_envs,) else obs}
+            rename_map = None
+            if args_cli.rename_map:
+                rename_map = json.loads(args_cli.rename_map)
             frame = isaac_obs_to_policy_frame(
                 single_obs,
                 language_instruction=args_cli.instruction,
                 observation_state_size=args_cli.observation_state_size,
+                rename_map=rename_map,
+                empty_cameras=args_cli.empty_cameras,
             )
             batch = preprocess(frame)
             for k, v in batch.items():

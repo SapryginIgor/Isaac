@@ -34,6 +34,7 @@ def _resize_to_chw(img: np.ndarray, target_hw: tuple[int, int] = (256, 256)) -> 
 
 def _gather_images(obs: dict[str, Any]) -> list[np.ndarray]:
     keys = ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3",
+            "observation.images.side", "observation.images.up",
             "rgb", "image", "observation.images.top", "observation.images.wrist")
     images = []
     for k in keys:
@@ -45,34 +46,68 @@ def _gather_images(obs: dict[str, Any]) -> list[np.ndarray]:
     return images
 
 
+def _empty_image_batch() -> np.ndarray:
+    return np.expand_dims(np.zeros((3, IMAGE_SHAPE[1], IMAGE_SHAPE[2]), dtype=np.float32), axis=0)
+
+
 def isaac_obs_to_policy_frame(
     obs: dict[str, Any],
     language_instruction: str = "Pick the cube.",
     image_key_map: dict[str, str] | None = None,
     state_keys: list[str] | None = None,
     observation_state_size: int | None = None,
+    rename_map: dict[str, str] | None = None,
+    empty_cameras: int = 0,
 ) -> dict[str, Any]:
     """
     Build a policy frame from Isaac env observation.
-    observation_state_size: if set, state is truncated/padded to this length to match
-    the model's normalization (e.g. 6 for lerobot/svla_so101_pickplace fine-tuned SmolVLA).
+
+    rename_map: maps env observation key -> policy key (e.g. {"observation.images.side": "observation.images.camera1",
+               "observation.images.up": "observation.images.camera2"}). Same semantics as LeRobot training --rename_map.
+    empty_cameras: number of trailing policy camera slots to fill with zeros (e.g. 1 for SmolVLA side+up+empty).
+    observation_state_size: if set, state is truncated/padded to this length to match the model's normalization.
     """
     frame = {LANGUAGE_KEY: language_instruction, TASK_KEY: language_instruction}
     image_key_map = image_key_map or {}
-    images = _gather_images(obs)
-    if not images:
-        images = [np.zeros((3, 256, 256), dtype=np.float32)]
-    resized = []
-    for i in range(3):
-        img = _resize_to_chw(images[min(i, len(images) - 1)], (IMAGE_SHAPE[1], IMAGE_SHAPE[2]))
-        if img.shape[0] == 1:
-            img = np.repeat(img, 3, axis=0)
-        resized.append(img.astype(np.float32))
-    for key, img in zip(CAMERA_KEYS, resized):
-        frame[key] = np.expand_dims(img, axis=0)
-    for src, dst in image_key_map.items():
-        if src in frame and dst != src:
-            frame[dst] = frame.pop(src)
+    rename_map = rename_map or {}
+
+    if rename_map:
+        # Build camera slots from env using rename_map (source -> target)
+        for src_key, dst_key in rename_map.items():
+            if src_key not in obs:
+                continue
+            img = _resize_to_chw(_to_numpy(obs[src_key]), (IMAGE_SHAPE[1], IMAGE_SHAPE[2]))
+            if img.shape[0] == 1:
+                img = np.repeat(img, 3, axis=0)
+            frame[dst_key] = np.expand_dims(img.astype(np.float32), axis=0)
+        # Fill trailing camera slots with zeros for empty_cameras
+        for i in range(empty_cameras):
+            slot = CAMERA_KEYS[2 - i]
+            frame[slot] = _empty_image_batch()
+        # Ensure all policy camera keys exist (fill any missing with zeros)
+        for k in CAMERA_KEYS:
+            if k not in frame:
+                frame[k] = _empty_image_batch()
+    else:
+        # Legacy: gather images by key order, use empty slots for trailing empty_cameras
+        images = _gather_images(obs)
+        if not images:
+            images = [np.zeros((3, IMAGE_SHAPE[1], IMAGE_SHAPE[2]), dtype=np.float32)]
+        n_real = max(0, len(CAMERA_KEYS) - empty_cameras)
+        resized = []
+        for i in range(len(CAMERA_KEYS)):
+            if i < n_real and i < len(images):
+                img = _resize_to_chw(images[i], (IMAGE_SHAPE[1], IMAGE_SHAPE[2]))
+            else:
+                img = np.zeros((3, IMAGE_SHAPE[1], IMAGE_SHAPE[2]), dtype=np.float32)
+            if img.shape[0] == 1:
+                img = np.repeat(img, 3, axis=0)
+            resized.append(img.astype(np.float32))
+        for key, img in zip(CAMERA_KEYS, resized):
+            frame[key] = np.expand_dims(img, axis=0)
+        for src, dst in image_key_map.items():
+            if src in frame and dst != src:
+                frame[dst] = frame.pop(src)
     default_state_keys = ("joint_pos", "joint_positions", "obs", "observation.state", "proprio",
                           "ee_pos", "ee_quat", "ee_pos_delta")
     keys = state_keys if state_keys else default_state_keys
