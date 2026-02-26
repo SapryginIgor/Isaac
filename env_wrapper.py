@@ -13,10 +13,10 @@ def _get_articulation_ee_pose(env, robot_name: str | None, ee_link_name: str | N
     unwrapped = env
     while hasattr(unwrapped, "unwrapped") and unwrapped.unwrapped is not unwrapped:
         unwrapped = unwrapped.unwrapped
-    scene = getattr(unwrapped, "scene", None)
+    scene = unwrapped.scene
     if scene is None:
         return None, None
-    articulations = getattr(scene, "articulations", None) or getattr(scene, "arms", None)
+    articulations = scene.articulations
     if articulations is None:
         return None, None
     art = articulations.get(robot_name) if hasattr(articulations, "get") and robot_name else None
@@ -24,16 +24,16 @@ def _get_articulation_ee_pose(env, robot_name: str | None, ee_link_name: str | N
         art = articulations[0]
     if art is None:
         return None, None
-    data = getattr(art, "data", None)
+    data = art.data
     if data is None:
         return None, None
-    body_pos = getattr(data, "body_pos_w", None) or getattr(data, "root_pos_w", None)
-    body_quat = getattr(data, "body_quat_w", None) or getattr(data, "root_quat_w", None)
+    body_pos = data.body_pos_w
+    body_quat = data.body_quat_w
     if body_pos is None or body_quat is None:
         return None, None
-    names = list(getattr(art, "body_names", [])) or list(getattr(data, "body_names", []))
+    names = list(art.body_names)
     idx = names.index(ee_link_name) if ee_link_name and ee_link_name in names else -1
-    if getattr(body_pos, "shape", ()) and len(body_pos.shape) >= 2 and body_pos.shape[-2] > 1:
+    if body_pos.shape and len(body_pos.shape) >= 2 and body_pos.shape[-2] > 1:
         pos = body_pos[..., idx, :]
         quat = body_quat[..., idx, :]
     else:

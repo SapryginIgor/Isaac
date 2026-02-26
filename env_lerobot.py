@@ -14,7 +14,7 @@ from gymnasium import spaces
 def _unbatch_space(space: gym.Space, num_envs: int) -> gym.Space:
     """Derive single-env space from a possibly batched space (for VectorEnv API)."""
     if isinstance(space, spaces.Box):
-        shape = getattr(space, "shape", None)
+        shape = space.shape
         if shape and len(shape) >= 1 and shape[0] == num_envs:
             low = np.asarray(space.low)
             high = np.asarray(space.high)

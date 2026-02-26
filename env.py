@@ -64,13 +64,13 @@ def make_env(
     from env_lerobot import IsaacAsVectorEnv
 
     if cfg is not None:
-        task = getattr(cfg, "task", task)
-        device = getattr(cfg, "device", device)
-        robot_name = getattr(cfg, "robot_name", robot_name)
-        ee_link_name = getattr(cfg, "ee_link_name", ee_link_name)
-        add_ee_to_obs = getattr(cfg, "add_ee_to_obs", add_ee_to_obs)
+        task = cfg.task
+        device = cfg.device
+        robot_name = cfg.robot_name
+        ee_link_name = cfg.ee_link_name
+        add_ee_to_obs = cfg.add_ee_to_obs
 
-    reg = getattr(gym.envs, "registry", {})
+    reg = gym.envs.registry
     if task not in reg and not task.endswith("-v0"):
         alt = f"{task.rstrip('-v0')}-v0"
         if alt in reg:

@@ -68,7 +68,7 @@ def main():
     )
 
     task_id = args_cli.task
-    reg = getattr(gym.envs, "registry", {})
+    reg = gym.envs.registry
     if task_id not in reg and not task_id.endswith("-v0"):
         alt = f"{task_id.rstrip('-v0')}-v0"
         if alt in reg:
@@ -92,9 +92,9 @@ def main():
         step = 0
         while step < args_cli.max_steps:
             if isinstance(obs, dict):
-                single_obs = {k: (v[0] if getattr(v, "shape", ())[:1] == (num_envs,) else v) for k, v in obs.items()}
+                single_obs = {k: (v[0] if v.shape[:1] == (num_envs,) else v) for k, v in obs.items()}
             else:
-                single_obs = {"obs": obs[0] if getattr(obs, "shape", ())[:1] == (num_envs,) else obs}
+                single_obs = {"obs": obs[0] if obs.shape[:1] == (num_envs,) else obs}
             frame = isaac_obs_to_policy_frame(single_obs, language_instruction=args_cli.instruction)
             batch = preprocess(frame)
             for k, v in batch.items():
@@ -112,7 +112,7 @@ def main():
             inner = env
             while hasattr(inner, "env"):
                 inner = inner.env
-            env_action_t = torch.as_tensor(env_action, device=getattr(inner, "device", device), dtype=torch.float32)
+            env_action_t = torch.as_tensor(env_action, device=inner.device, dtype=torch.float32)
             obs, reward, terminated, truncated, info = env.step(env_action_t)
             step += 1
             if (terminated.any() if hasattr(terminated, "any") else terminated) or (truncated.any() if hasattr(truncated, "any") else truncated):
