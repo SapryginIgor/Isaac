@@ -83,6 +83,9 @@ def main():
             task_id = alt
 
     env_cfg = parse_env_cfg(task_id, device=args_cli.device, num_envs=args_cli.num_envs)
+    # Override episode length so the env allows max_steps (env otherwise truncates at episode_length_s)
+    step_dt = env_cfg.sim.dt * env_cfg.decimation
+    env_cfg.episode_length_s = args_cli.max_steps * step_dt
     env = gym.make(task_id, cfg=env_cfg)
 
     env = IsaacEEWrapper(
