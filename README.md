@@ -96,11 +96,39 @@ ee = env.get_ee_state()
 - Default: **`lerobot/smolvla_base`** (multi-task, SO-100/SO-101–friendly action space).
 - You can pass another HuggingFace repo, e.g. **`kenmacken/smolvla_policy`**, via `--policy`. SO-101 aligns well with SmolVLA’s typical SO-100/SO-101 action space; if the checkpoint uses a different robot, you may need to adjust scaling in `adapters.policy_action_to_env()` or add a small mapping in this repo.
 
+## LeRobot compatibility
+
+Isaac here is the **environment interface** (Isaac Lab SO-101 + wrapper); LeRobot is the **framework for training and data**. You can use both: make the Isaac env available to LeRobot so you can reuse LeRobot’s data collection, training, and evaluation.
+
+- **`env.py`** exposes **`make_env(n_envs, use_async_envs, cfg)`** so LeRobot (and EnvHub) can load this env. It returns a VectorEnv-compatible wrapper so LeRobot does not try to clone the env into multiple processes.
+- **`env_lerobot.py`** implements that wrapper (`IsaacAsVectorEnv`).
+- **Usage**: Run your script via **Isaac Lab’s Python** (`isaaclab.sh`); the simulation app must be started by the caller before calling `make_env()`. Example:
+
+```python
+# Run this script with: ./isaaclab.sh -p your_script.py
+from isaaclab.app import AppLauncher
+app_launcher = AppLauncher(headless=True)
+simulation_app = app_launcher.app
+
+import gymnasium as gym
+from env import make_env
+
+env = make_env(n_envs=2, task="Isaac-SO-ARM101-Lift-Cube-v0")
+obs, info = env.reset()
+# Use env with LeRobot's data collection or training APIs...
+env.close()
+simulation_app.close()
+```
+
+For **EnvHub**: put this repo on the Hub and load with `make_env("username/your-repo", trust_remote_code=True)` from a process that has already started the Isaac app (e.g. a script launched with `isaaclab.sh`).
+
 ## Project layout
 
 | File / folder | Purpose |
 |---------------|--------|
 | `run_smolvla_isaac.py` | Entrypoint: registers isaac_so_arm101 tasks, creates SO-101 env, wraps with EE wrapper, loads SmolVLA, runs inference loop. |
+| `env.py` | LeRobot/EnvHub: `make_env(n_envs, use_async_envs, cfg)` to build the Isaac env as a VectorEnv. |
+| `env_lerobot.py` | Wrapper so the Isaac env presents the `gym.vector.VectorEnv` interface. |
 | `env_wrapper.py` | Gymnasium wrapper: adds EE pose and deltas, exposes `get_ee_state()`, optionally adds EE to obs. |
 | `adapters.py` | Isaac obs → policy frame; policy action → env action (scale/clip). |
 | `requirements.txt` | Extra deps (lerobot[smolvla], gymnasium, torch, etc.). |
