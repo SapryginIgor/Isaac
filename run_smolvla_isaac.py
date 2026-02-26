@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """
-Run SmolVLA policy in an Isaac Lab SO-101 env (lift-cube or reach).
-Uses the isaac_so_arm101 extension in-repo. Follows Isaac Lab pattern: launch app first, then import.
-Run from Isaac Lab: ./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
+Run SmolVLA policy in Isaac Lab SO-101 (lift-cube or reach).
+Usage: ./isaaclab.sh -p /path/to/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
 """
 
-"""Launch Isaac Sim Simulator first."""
-
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -64,7 +60,6 @@ def main():
         raise SystemExit(1) from e
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Loading policy from {args_cli.policy} on {device} ...")
     policy = SmolVLAPolicy.from_pretrained(args_cli.policy).to(device).eval()
     preprocess, postprocess = make_pre_post_processors(
         policy.config,
@@ -72,21 +67,15 @@ def main():
         preprocessor_overrides={"device_processor": {"device": str(device)}},
     )
 
-    # Resolve task id (extension registers with -v0 suffix)
-    _reg = getattr(getattr(gym, "envs", None), "registry", None) or {}
     task_id = args_cli.task
-    if task_id not in _reg and not re.match(r".*-v\d+$", task_id):
-        _with_v0 = f"{task_id.rstrip('-v0')}-v0"
-        if _with_v0 in _reg:
-            task_id = _with_v0
+    reg = getattr(gym.envs, "registry", {})
+    if task_id not in reg and not task_id.endswith("-v0"):
+        alt = f"{task_id.rstrip('-v0')}-v0"
+        if alt in reg:
+            task_id = alt
 
     env_cfg = parse_env_cfg(task_id, device=args_cli.device, num_envs=args_cli.num_envs)
-    try:
-        env = gym.make(task_id, cfg=env_cfg)
-    except Exception as e:
-        print("Failed to create env.", file=sys.stderr)
-        print("Ensure isaac_so_arm101 is on PYTHONPATH (in-repo: isaac_so_arm101/src is added automatically).", file=sys.stderr)
-        raise SystemExit(1) from e
+    env = gym.make(task_id, cfg=env_cfg)
 
     env = IsaacEEWrapper(
         env,
@@ -95,57 +84,40 @@ def main():
         add_ee_to_obs=not args_cli.no_ee_in_obs,
     )
 
-    action_space = env.action_space
-    action_shape = tuple(action_space.shape) if hasattr(action_space, "shape") else (getattr(action_space, "n", 7),)
+    action_shape = tuple(env.action_space.shape)
+    num_envs = args_cli.num_envs
 
     for ep in range(args_cli.episodes):
         obs, info = env.reset()
-        ee_state = info.get("ee_state", {})
-        print(f"Episode {ep + 1}/{args_cli.episodes} started. EE pos: {ee_state.get('ee_pos', 'N/A')}")
         step = 0
         while step < args_cli.max_steps:
             if isinstance(obs, dict):
-                single_obs = {k: (v[0] if hasattr(v, "shape") and len(v.shape) > 0 and v.shape[0] == args_cli.num_envs else v) for k, v in obs.items()}
+                single_obs = {k: (v[0] if getattr(v, "shape", ())[:1] == (num_envs,) else v) for k, v in obs.items()}
             else:
-                single_obs = {"obs": obs[0] if (hasattr(obs, "shape") and len(obs.shape) > 0 and obs.shape[0] == args_cli.num_envs) else obs}
+                single_obs = {"obs": obs[0] if getattr(obs, "shape", ())[:1] == (num_envs,) else obs}
             frame = isaac_obs_to_policy_frame(single_obs, language_instruction=args_cli.instruction)
             batch = preprocess(frame)
-            # SmolVLA expects all tensors on the same device; convert numpy and move existing tensors
-            if isinstance(batch, dict):
-                out = {}
-                for k, v in batch.items():
-                    if isinstance(v, np.ndarray):
-                        out[k] = torch.as_tensor(v, device=device)
-                    elif isinstance(v, torch.Tensor) and v.device != device:
-                        out[k] = v.to(device)
-                    else:
-                        out[k] = v
-                batch = out
+            for k, v in batch.items():
+                if isinstance(v, np.ndarray):
+                    batch[k] = torch.as_tensor(v, device=device)
+                elif isinstance(v, torch.Tensor) and v.device != device:
+                    batch[k] = v.to(device)
             with torch.inference_mode():
                 action = policy.select_action(batch)
             action = postprocess(action)
             action = action.cpu().numpy() if hasattr(action, "cpu") else np.asarray(action)
             env_action = policy_action_to_env(action, env_action_space_shape=action_shape, clip=True)
-            # Action manager expects (num_envs, action_dim); ensure 2D
             if env_action.ndim == 1:
-                env_action = np.tile(env_action[np.newaxis, :], (args_cli.num_envs, 1))
-            # Isaac Lab env expects a tensor; get inner env device and convert
-            inner_env = env
-            while hasattr(inner_env, "env"):
-                inner_env = inner_env.env
-            env_device = getattr(inner_env, "device", device)
-            env_action_t = torch.as_tensor(env_action, device=env_device, dtype=torch.float32)
+                env_action = np.broadcast_to(env_action, (num_envs, env_action.shape[0])).copy()
+            inner = env
+            while hasattr(inner, "env"):
+                inner = inner.env
+            env_action_t = torch.as_tensor(env_action, device=getattr(inner, "device", device), dtype=torch.float32)
             obs, reward, terminated, truncated, info = env.step(env_action_t)
-            ee_state = info.get("ee_state", {})
-            if step % 50 == 0:
-                r = reward.item()
-                print(f"  step {step} reward={r} ee_pos={ee_state.get('ee_pos')}")
             step += 1
-            term = terminated.any() if hasattr(terminated, "any") else terminated
-            trunc = truncated.any() if hasattr(truncated, "any") else truncated
-            if term or trunc:
+            if (terminated.any() if hasattr(terminated, "any") else terminated) or (truncated.any() if hasattr(truncated, "any") else truncated):
                 break
-        print(f"Episode {ep + 1} finished after {step} steps.")
+        print(f"Episode {ep + 1}/{args_cli.episodes} done ({step} steps).")
     env.close()
 
 
