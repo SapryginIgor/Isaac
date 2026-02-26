@@ -2,6 +2,7 @@
 """
 Run SmolVLA policy in Isaac Lab SO-101 (lift-cube or reach).
 Usage: ./isaaclab.sh -p /path/to/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
+For the Lift task with real camera images, add: --enable_cameras
 """
 
 import argparse
@@ -115,12 +116,24 @@ def main():
         step = 0
         while step < args_cli.max_steps:
             if isinstance(obs, dict):
-                single_obs = {k: (v[0] if v.shape[:1] == (num_envs,) else v) for k, v in obs.items()}
+                single_obs = {}
+                for k, v in obs.items():
+                    if isinstance(v, dict):
+                        for sub_k, sub_v in v.items():
+                            single_obs[f"{k}.{sub_k}"] = sub_v[0] if hasattr(sub_v, "shape") and sub_v.shape[:1] == (num_envs,) else sub_v
+                    else:
+                        single_obs[k] = v[0] if hasattr(v, "shape") and v.shape[:1] == (num_envs,) else v
             else:
                 single_obs = {"obs": obs[0] if obs.shape[:1] == (num_envs,) else obs}
             rename_map = None
             if args_cli.rename_map:
                 rename_map = json.loads(args_cli.rename_map)
+            elif args_cli.empty_cameras >= 1:
+                # Default: map lift task camera keys (observation.images_side/up) to policy camera1/camera2
+                rename_map = {
+                    "observation.images_side": "observation.images.camera1",
+                    "observation.images_up": "observation.images.camera2",
+                }
             frame = isaac_obs_to_policy_frame(
                 single_obs,
                 language_instruction=args_cli.instruction,
@@ -129,12 +142,22 @@ def main():
                 empty_cameras=args_cli.empty_cameras,
             )
             if ep == 0 and step == 0:
+                print(f"[Images] Env observation keys: {list(single_obs.keys())}")
                 for key in ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3"):
                     if key not in frame:
                         print(f"[Images] {key}: missing")
                         continue
                     x = np.asarray(frame[key])
                     print(f"[Images] {key}: shape={x.shape} min={x.min():.4f} max={x.max():.4f} mean={x.mean():.4f} zeros={100 * (x == 0).mean():.1f}%")
+                # Warn if env provides no images (e.g. Lift task has no cameras by default)
+                all_zero = all(
+                    np.asarray(frame.get(k, np.zeros(1))).size > 0 and np.asarray(frame[k]).mean() == 0.0
+                    for k in ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3")
+                )
+                if all_zero:
+                    print("[Images] WARNING: All camera slots are zeros. This env does not provide image observations."
+                          " Add camera sensors and observation terms to the task (see Isaac Lab Camera docs),"
+                          " or use an env that includes cameras.")
             batch = preprocess(frame)
             for k, v in batch.items():
                 if isinstance(v, np.ndarray):

@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""
+View sample camera frames from the dataset the SmolVLA pickplace model was trained on.
+Saves side and up images so you can compare with your Isaac camera views.
+
+Usage:
+  python view_training_cameras.py
+  python view_training_cameras.py --num_frames 5 --episode 0
+  python view_training_cameras.py --output_dir ./my_camera_samples
+
+Requires: pip install lerobot (or pip install 'lerobot[smolvla]')
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+try:
+    import numpy as np
+    from PIL import Image
+except ImportError as e:
+    print("Requires numpy and Pillow: pip install numpy pillow", file=sys.stderr)
+    raise SystemExit(1) from e
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Save sample side/up camera frames from lerobot/svla_so101_pickplace"
+    )
+    parser.add_argument(
+        "--repo_id",
+        type=str,
+        default="lerobot/svla_so101_pickplace",
+        help="HuggingFace dataset repo (default: training dataset for SmolVLA pickplace)",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="view_training_cameras",
+        help="Directory to save PNGs (default: view_training_cameras)",
+    )
+    parser.add_argument(
+        "--num_frames",
+        type=int,
+        default=3,
+        help="Number of frames to sample (default: 3)",
+    )
+    parser.add_argument(
+        "--episode",
+        type=int,
+        default=0,
+        help="Episode index to sample from (default: 0)",
+    )
+    args = parser.parse_args()
+
+    try:
+        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+    except ImportError:
+        print(
+            "LeRobot is required. Install with: pip install lerobot",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Loading dataset: {args.repo_id}")
+    dataset = LeRobotDataset(args.repo_id)
+
+    # Find frame indices: from the chosen episode if possible, else first frames
+    n_total = len(dataset)
+    if hasattr(dataset, "hf_dataset") and "episode_index" in dataset.hf_dataset.column_names:
+        ep_col = dataset.hf_dataset["episode_index"]
+        indices = [i for i, e in enumerate(ep_col) if e == args.episode]
+        if indices:
+            start, end = indices[0], indices[-1] + 1
+            n_ep = end - start
+            step = max(1, (n_ep - 1) // max(1, args.num_frames - 1))
+            frame_indices = list(range(start, min(start + step * args.num_frames, end), step))[: args.num_frames]
+        else:
+            print(f"Episode {args.episode} not found. Using first {args.num_frames} frames.")
+            frame_indices = list(range(0, min(args.num_frames, n_total)))
+    else:
+        step = max(1, (n_total - 1) // max(1, args.num_frames))
+        frame_indices = list(range(0, min(step * args.num_frames, n_total), step))[: args.num_frames]
+
+    # Dataset uses observation.images.side / observation.images.up (per dataset card)
+    sample = dataset[frame_indices[0]] if frame_indices else {}
+    side_key = "observation.images.side" if "observation.images.side" in sample else "observation.images_side"
+    up_key = "observation.images.up" if "observation.images.up" in sample else "observation.images_up"
+
+    for idx in frame_indices:
+        frame = dataset[idx]
+        for key, name in [(side_key, "side"), (up_key, "up")]:
+            if key not in frame:
+                print(f"Warning: {key} not in frame keys: {list(frame.keys())}")
+                continue
+            img = frame[key]
+            if hasattr(img, "numpy"):
+                img = img.numpy()
+            else:
+                img = np.asarray(img)
+            # (C,H,W) -> (H,W,C) for PIL
+            if img.ndim == 3 and img.shape[0] in (1, 3):
+                img = np.transpose(img, (1, 2, 0))
+            if img.dtype != np.uint8:
+                if img.max() <= 1.0:
+                    img = (img * 255).astype(np.uint8)
+                else:
+                    img = img.astype(np.uint8)
+            if img.shape[-1] == 1:
+                img = np.repeat(img, 3, axis=-1)
+            out_path = out_dir / f"{name}_ep{args.episode}_frame{idx}.png"
+            Image.fromarray(img).save(out_path)
+            print(f"Saved {out_path} ({img.shape[0]}x{img.shape[1]})")
+
+    print(f"\nDone. Open images in {out_dir.absolute()} to see how side/up cameras looked in the training data.")
+
+
+if __name__ == "__main__":
+    main()

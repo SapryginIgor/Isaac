@@ -91,6 +91,18 @@ ee = info["ee_state"]  # ee["ee_pos"], ee["ee_quat"], ee["ee_pos_delta"], ee["ee
 ee = env.get_ee_state()
 ```
 
+## Vision / SmolVLA and cameras
+
+The **Lift** task includes **side** and **up** cameras and exposes them as `observation.images_side` and `observation.images_up`. To get real images (and avoid all-zero camera slots), run with **`--enable_cameras`** (see command below).
+
+Example with cameras enabled:
+
+```bash
+./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0 --enable_cameras
+```
+
+The script uses a default rename map so that `observation.images_side` → `camera1`, `observation.images_up` → `camera2`, and the third slot is zeros (`--empty_cameras 1`). **Reach** and other tasks do not define cameras (see [Isaac Lab Camera](https://isaac-sim.github.io/IsaacLab/main/source/overview/core-concepts/sensors/camera.html) to add them).
+
 ## Alternative checkpoints
 
 - Default: **`lerobot/smolvla_base`** (multi-task, SO-100/SO-101–friendly action space).

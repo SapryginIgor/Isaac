@@ -29,6 +29,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors.camera import TiledCameraCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
@@ -77,6 +78,42 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     light = AssetBaseCfg(
         prim_path="/World/light",
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+    )
+
+    # Cameras for vision policies (side and up views of table/robot)
+    camera_side = TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/CameraSide",
+        offset=TiledCameraCfg.OffsetCfg(
+            pos=(0.35, 0.5, 0.28),
+            rot=(0.707, -0.707, 0.0, 0.0),
+            convention="world",
+        ),
+        data_types=["rgb"],
+        width=256,
+        height=256,
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
+    )
+    camera_up = TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/CameraUp",
+        offset=TiledCameraCfg.OffsetCfg(
+            pos=(0.4, 0.0, 0.65),
+            rot=(0.0, 1.0, 0.0, 0.0),
+            convention="world",
+        ),
+        data_types=["rgb"],
+        width=256,
+        height=256,
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
     )
 
 
@@ -132,8 +169,25 @@ class ObservationsCfg:
             self.enable_corruption = True
             self.concatenate_terms = True
 
+    @configclass
+    class ImagesCfg(ObsGroup):
+        """Camera images for vision policies (side and up). Use with --enable_cameras."""
+
+        images_side = ObsTerm(
+            func=mdp.image,
+            params={"sensor_cfg": SceneEntityCfg("camera_side"), "data_type": "rgb", "normalize": False},
+        )
+        images_up = ObsTerm(
+            func=mdp.image,
+            params={"sensor_cfg": SceneEntityCfg("camera_up"), "data_type": "rgb", "normalize": False},
+        )
+
+        def __post_init__(self):
+            self.concatenate_terms = False
+
     # observation groups
     policy: PolicyCfg = PolicyCfg()
+    observation: ImagesCfg = ImagesCfg()
 
 
 @configclass

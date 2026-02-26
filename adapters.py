@@ -33,9 +33,12 @@ def _resize_to_chw(img: np.ndarray, target_hw: tuple[int, int] = (256, 256)) -> 
 
 
 def _gather_images(obs: dict[str, Any]) -> list[np.ndarray]:
-    keys = ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3",
-            "observation.images.side", "observation.images.up",
-            "rgb", "image", "observation.images.top", "observation.images.wrist")
+    keys = (
+        "observation.images.camera1", "observation.images.camera2", "observation.images.camera3",
+        "observation.images.side", "observation.images.up",
+        "observation.images_side", "observation.images_up",
+        "rgb", "image", "observation.images.top", "observation.images.wrist",
+    )
     images = []
     for k in keys:
         if k not in obs or len(images) >= 3:
