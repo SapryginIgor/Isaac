@@ -128,12 +128,25 @@ def main():
                 rename_map=rename_map,
                 empty_cameras=args_cli.empty_cameras,
             )
+            if ep == 0 and step == 0:
+                for key in ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3"):
+                    if key not in frame:
+                        print(f"[Images] {key}: missing")
+                        continue
+                    x = np.asarray(frame[key])
+                    print(f"[Images] {key}: shape={x.shape} min={x.min():.4f} max={x.max():.4f} mean={x.mean():.4f} zeros={100 * (x == 0).mean():.1f}%")
             batch = preprocess(frame)
             for k, v in batch.items():
                 if isinstance(v, np.ndarray):
                     batch[k] = torch.as_tensor(v, device=device)
                 elif isinstance(v, torch.Tensor) and v.device != device:
                     batch[k] = v.to(device)
+            if ep == 0 and step == 0:
+                for k, v in batch.items():
+                    if isinstance(v, torch.Tensor) and v.dim() >= 3:
+                        if "image" in k.lower() or "pixel" in k.lower() or "camera" in k.lower() or v.numel() > 1e6:
+                            a = v.detach().float().cpu().numpy()
+                            print(f"[Batch] {k}: shape={a.shape} min={a.min():.4f} max={a.max():.4f} mean={a.mean():.4f}")
             with torch.inference_mode():
                 action = policy.select_action(batch)
             action = postprocess(action)
