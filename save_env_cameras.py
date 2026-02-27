@@ -63,9 +63,12 @@ def _flatten_obs(obs, prefix=""):
 
 
 def _is_image_array(arr):
-    if not hasattr(arr, "shape") or not hasattr(arr, "dtype"):
-        return False
-    arr = np.asarray(arr.cpu())
+    # Accept torch tensors or numpy arrays; always work on a CPU numpy view.
+    if hasattr(arr, "detach"):
+        arr = arr.detach()
+    if hasattr(arr, "cpu"):
+        arr = arr.cpu()
+    arr = np.asarray(arr)
     if arr.ndim not in (3, 4):
         return False
     # (N,H,W,C) or (H,W,C) or (N,C,H,W) or (C,H,W)
@@ -76,9 +79,11 @@ def _is_image_array(arr):
 
 def _to_uint8_rgb(img: np.ndarray, env_index: int = 0) -> np.ndarray:
     """Extract one env's image as (H,W,3) uint8."""
-    img = np.asarray(img.cpu())
+    if hasattr(img, "detach"):
+        img = img.detach()
     if hasattr(img, "cpu"):
-        img = img.cpu().numpy()
+        img = img.cpu()
+    img = np.asarray(img)
     if img.ndim == 4:
         img = img[env_index]
     # (C,H,W) -> (H,W,C)
