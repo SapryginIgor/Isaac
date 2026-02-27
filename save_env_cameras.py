@@ -76,7 +76,7 @@ def _is_image_array(arr):
 
 def _to_uint8_rgb(img: np.ndarray, env_index: int = 0) -> np.ndarray:
     """Extract one env's image as (H,W,3) uint8."""
-    img = np.asarray(img)
+    img = np.asarray(img.cpu())
     if hasattr(img, "cpu"):
         img = img.cpu().numpy()
     if img.ndim == 4:
