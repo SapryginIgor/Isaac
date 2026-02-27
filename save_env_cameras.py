@@ -65,7 +65,7 @@ def _flatten_obs(obs, prefix=""):
 def _is_image_array(arr):
     if not hasattr(arr, "shape") or not hasattr(arr, "dtype"):
         return False
-    arr = np.asarray(arr.numpy())
+    arr = np.asarray(arr.cpu())
     if arr.ndim not in (3, 4):
         return False
     # (N,H,W,C) or (H,W,C) or (N,C,H,W) or (C,H,W)
