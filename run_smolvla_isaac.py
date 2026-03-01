@@ -38,6 +38,8 @@ parser.add_argument("--rename_map", type=str, default=None,
                     '"observation.images.up": "observation.images.camera2"}\'')
 parser.add_argument("--empty_cameras", type=int, default=1,
                     help="Number of trailing policy camera slots to fill with zeros (default 1 for SmolVLA side+up+empty)")
+parser.add_argument("--camera_usd", type=str, default=None,
+                    help="Load camera pose/intrinsics from this USD (cameras under CameraSideXform and CameraUpXform)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -55,6 +57,7 @@ import isaac_so_arm101.tasks.lift   # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
 from adapters import isaac_obs_to_policy_frame, policy_action_to_env
+from camera_usd_loader import apply_camera_usd_to_env_cfg
 from env_wrapper import IsaacEEWrapper
 
 
@@ -96,6 +99,9 @@ def main():
             task_id = alt
 
     env_cfg = parse_env_cfg(task_id, device=args_cli.device, num_envs=args_cli.num_envs)
+    if args_cli.camera_usd:
+        apply_camera_usd_to_env_cfg(env_cfg, args_cli.camera_usd)
+        print(f"[Cameras] Loaded from {args_cli.camera_usd}")
     # Override episode length so the env allows max_steps (env otherwise truncates at episode_length_s)
     step_dt = env_cfg.sim.dt * env_cfg.decimation
     env_cfg.episode_length_s = args_cli.max_steps * step_dt

@@ -8,6 +8,7 @@ Usage:
   ./isaaclab.sh -p save_env_cameras.py
   ./isaaclab.sh -p save_env_cameras.py --task Isaac-SO-ARM101-Lift-Cube-v0 --output_dir ./my_cameras
   ./isaaclab.sh -p save_env_cameras.py --num_envs 2   # save cameras for env 0 and env 1
+  ./isaaclab.sh -p save_env_cameras.py --camera_usd /path/to/scene.usd   # use cameras from USD (CameraSideXform / CameraUpXform)
 
 Requires: run with isaaclab.sh (Isaac Sim). Cameras are enabled automatically.
 """
@@ -31,6 +32,8 @@ parser.add_argument("--task", type=str, default="Isaac-SO-ARM101-Lift-Cube-v0", 
 parser.add_argument("--num_envs", type=int, default=1, help="Number of envs (saves first env's cameras by default)")
 parser.add_argument("--output_dir", type=str, default="env_camera_samples", help="Directory to save PNGs")
 parser.add_argument("--env_index", type=int, default=0, help="Which env's cameras to save (0 to num_envs-1)")
+parser.add_argument("--camera_usd", type=str, default=None,
+                    help="Load camera pose/intrinsics from this USD (cameras under CameraSideXform and CameraUpXform)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -47,6 +50,7 @@ import isaac_so_arm101.tasks.reach  # noqa: F401
 import isaac_so_arm101.tasks.lift   # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
+from camera_usd_loader import apply_camera_usd_to_env_cfg
 from env_wrapper import IsaacEEWrapper
 
 
@@ -108,6 +112,9 @@ def main():
             task_id = alt
 
     env_cfg = parse_env_cfg(task_id, device=args_cli.device, num_envs=args_cli.num_envs)
+    if args_cli.camera_usd:
+        apply_camera_usd_to_env_cfg(env_cfg, args_cli.camera_usd)
+        print(f"[save_env_cameras] Loaded cameras from {args_cli.camera_usd}")
     env = gym.make(task_id, cfg=env_cfg)
     env = IsaacEEWrapper(
         env,
