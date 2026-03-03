@@ -1,0 +1,77 @@
+# Docker Compose for Isaac SO-ARM101 + LeRobot/SmolVLA Bridge
+#
+# Usage:
+#   cd docker && docker compose build                     # Build the image
+#   cd docker && docker compose run --rm isaac-bridge     # Headless (training/inference)
+#   cd docker && docker compose run --rm isaac-bridge-x11 # With X11 GUI (visualization)
+#
+# X11 forwarding requires: xhost +local:docker (run on host before starting)
+
+services:
+  # ---- Headless mode (training, inference, no GUI) ----
+  isaac-bridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        - BASE_IMAGE=${BASE_IMAGE:-nvcr.io/nvidia/isaac-lab:2.3.2}
+    image: isaac-bridge:latest
+    container_name: isaac-bridge
+    network_mode: host
+    # GPU camera rendering needs more shared memory than Docker's 64MB default
+    shm_size: '4g'
+    environment:
+      - ACCEPT_EULA=Y
+      - PRIVACY_CONSENT=Y
+      - OMNI_KIT_ALLOW_ROOT=1
+      # Ensure full GPU access (Vulkan/OpenGL/display) — not just compute
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      # --- Live-edit: mount project directories from host ---
+      - ../src:/workspace/isaac-bridge/src
+      - ../scripts:/workspace/isaac-bridge/scripts
+      - ../isaac_so_arm101/src:/workspace/isaac-bridge/isaac_so_arm101/src
+      # --- Persistent caches (avoid re-downloading between runs) ---
+      - isaac-cache-kit:/isaac-sim/kit/cache
+      - isaac-cache-pip:/root/.cache/pip
+      - isaac-cache-gl:/root/.cache/nvidia/GLCache
+      - isaac-cache-compute:/root/.nv/ComputeCache
+      - isaac-cache-ov:/root/.cache/ov
+      - isaac-logs:/root/.nvidia-omniverse/logs
+      # --- HuggingFace cache (models + datasets persist across runs) ---
+      - huggingface-cache:/root/.cache/huggingface
+      # --- Output directory for saved data/logs ---
+      - ../output:/workspace/isaac-bridge/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    entrypoint: bash
+
+  # ---- X11 mode (GUI visualization, camera debugging) ----
+  isaac-bridge-x11:
+    extends:
+      service: isaac-bridge
+    container_name: isaac-bridge-x11
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - XAUTHORITY=/root/.Xauthority
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+
+volumes:
+  isaac-cache-kit:
+  isaac-cache-pip:
+  isaac-cache-gl:
+  isaac-cache-compute:
+  isaac-cache-ov:
+  isaac-logs:
+  huggingface-cache:
