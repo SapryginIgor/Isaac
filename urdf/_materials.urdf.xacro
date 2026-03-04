@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- Minimal materials for RealSense camera (stub when realsense2_description is not available). -->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <material name="aluminum">
+    <color rgba="0.7 0.7 0.7 1"/>
+  </material>
+</robot>

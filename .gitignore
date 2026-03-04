@@ -32,7 +32,10 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Isaac / Omniverse (if any local cache)
+# Caches
+*cache/
+
+# Isaac / Omniverse
 .isaac/
 *.usd
 *.usda

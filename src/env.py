@@ -12,11 +12,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Ensure project root and isaac_so_arm101 are on path when loaded as EnvHub or from LeRobot
 _SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
-_EXTENSION_SRC = _SCRIPT_DIR / "isaac_so_arm101" / "src"
+_EXTENSION_SRC = _PROJECT_ROOT / "isaac_so_arm101" / "src"
 if _EXTENSION_SRC.exists() and str(_EXTENSION_SRC) not in sys.path:
     sys.path.insert(0, str(_EXTENSION_SRC))
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Run SmolVLA policy in Isaac Lab SO-101 (lift-cube or reach).
-Usage: ./isaaclab.sh -p /path/to/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
+Usage: ./isaaclab.sh -p /path/to/scripts/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
 For the Lift task with real camera images, add: --enable_cameras
 """
 
@@ -12,11 +12,12 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-# Project root (directory containing this script and isaac_so_arm101/)
 _SCRIPT_DIR = Path(__file__).resolve().parent
-if str(_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPT_DIR))
-_EXTENSION_SRC = _SCRIPT_DIR / "isaac_so_arm101" / "src"
+_PROJECT_ROOT = _SCRIPT_DIR.parent
+_SRC_DIR = _PROJECT_ROOT / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+_EXTENSION_SRC = _PROJECT_ROOT / "isaac_so_arm101" / "src"
 if _EXTENSION_SRC.exists() and str(_EXTENSION_SRC) not in sys.path:
     sys.path.insert(0, str(_EXTENSION_SRC))
 

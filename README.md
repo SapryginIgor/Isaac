@@ -35,7 +35,7 @@ pip install "lerobot[smolvla]" gymnasium numpy torch huggingface_hub
 Scripts must be run via Isaac Lab’s Python so that `isaaclab` and the SO-101 envs are available. From your **Isaac Lab** repo root:
 
 ```bash
-./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
+./isaaclab.sh -p /path/to/Isaac/scripts/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0
 ```
 
 **Task IDs** (from the in-repo isaac_so_arm101 extension):
@@ -63,8 +63,73 @@ Options:
 Example (headless, 2 episodes, reach task):
 
 ```bash
-./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py --task Isaac-SO-ARM101-Reach-v0 --headless --episodes 2 --instruction "Reach the target."
+./isaaclab.sh -p /path/to/Isaac/scripts/run_smolvla_isaac.py --task Isaac-SO-ARM101-Reach-v0 --headless --episodes 2 --instruction "Reach the target."
 ```
+
+## Running with Docker
+
+The Docker image is based on the official Isaac Lab container and bundles all dependencies (Isaac Sim, LeRobot, SmolVLA). This is the easiest way to get started — no local Isaac Sim install needed.
+
+**Requirements:** Docker with [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) (`nvidia-ctk`).
+
+### Build
+
+```bash
+cd docker && docker compose build
+```
+
+To use a different base image (e.g. a newer Isaac Lab release):
+
+```bash
+BASE_IMAGE=nvcr.io/nvidia/isaac-lab:2.3.2 docker compose build
+```
+
+### Run (headless)
+
+```bash
+cd docker && docker compose run --rm isaac-bridge
+```
+
+This drops you into a bash shell inside the container. From there, use the built-in aliases:
+
+```bash
+run-smolvla --task Isaac-SO-ARM101-Lift-Cube-v0 --headless --enable_cameras
+save-cameras --task Isaac-SO-ARM101-Lift-Cube-v0
+```
+
+Or call `isaaclab.sh` directly:
+
+```bash
+isaaclab -p scripts/run_smolvla_isaac.py --task Isaac-SO-ARM101-Reach-v0 --headless --episodes 2
+```
+
+### Run (with X11 GUI)
+
+For visualization and camera debugging, use the X11 service. On the host, make sure `DISPLAY` is set and allow Docker to connect:
+
+```bash
+export DISPLAY=:1   # use :0, :1, etc. — match your active X display
+xhost +local:docker
+cd docker && docker compose run --rm isaac-bridge-x11
+```
+
+Then inside the container, run without `--headless` to get the Isaac Sim viewport:
+
+```bash
+run-smolvla --task Isaac-SO-ARM101-Lift-Cube-v0 --enable_cameras
+```
+
+### Live editing
+
+The compose file bind-mounts `src/`, `scripts/`, and `isaac_so_arm101/src/` from the host into the container. Edits on the host are reflected immediately — no rebuild needed for code changes.
+
+### Persistent caches
+
+Model weights (HuggingFace), pip packages, and Isaac Sim caches are stored in Docker named volumes, so they survive `docker compose down` and don't re-download between runs.
+
+### Output
+
+The `output/` directory is mounted from the host, so any data saved there (logs, images, checkpoints) persists after the container exits.
 
 ## End-effector position and deltas
 
@@ -98,7 +163,7 @@ The **Lift** task includes **side** and **up** cameras and exposes them as `obse
 Example with cameras enabled:
 
 ```bash
-./isaaclab.sh -p /path/to/Isaac/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0 --enable_cameras
+./isaaclab.sh -p /path/to/Isaac/scripts/run_smolvla_isaac.py --task Isaac-SO-ARM101-Lift-Cube-v0 --enable_cameras
 ```
 
 The script uses a default rename map so that `observation.images_side` → `camera1`, `observation.images_up` → `camera2`, and the third slot is zeros (`--empty_cameras 1`). **Reach** and other tasks do not define cameras (see [Isaac Lab Camera](https://isaac-sim.github.io/IsaacLab/main/source/overview/core-concepts/sensors/camera.html) to add them).
@@ -112,8 +177,8 @@ The script uses a default rename map so that `observation.images_side` → `came
 
 Isaac here is the **environment interface** (Isaac Lab SO-101 + wrapper); LeRobot is the **framework for training and data**. You can use both: make the Isaac env available to LeRobot so you can reuse LeRobot’s data collection, training, and evaluation.
 
-- **`env.py`** exposes **`make_env(n_envs, use_async_envs, cfg)`** so LeRobot (and EnvHub) can load this env. It returns a VectorEnv-compatible wrapper so LeRobot does not try to clone the env into multiple processes.
-- **`env_lerobot.py`** implements that wrapper (`IsaacAsVectorEnv`).
+- **`src/env.py`** exposes **`make_env(n_envs, use_async_envs, cfg)`** so LeRobot (and EnvHub) can load this env. It returns a VectorEnv-compatible wrapper so LeRobot does not try to clone the env into multiple processes.
+- **`src/env_lerobot.py`** implements that wrapper (`IsaacAsVectorEnv`).
 - **Usage**: Run your script via **Isaac Lab’s Python** (`isaaclab.sh`); the simulation app must be started by the caller before calling `make_env()`. Example:
 
 ```python
@@ -138,13 +203,12 @@ For **EnvHub**: put this repo on the Hub and load with `make_env("username/your-
 
 | File / folder | Purpose |
 |---------------|--------|
-| `run_smolvla_isaac.py` | Entrypoint: registers isaac_so_arm101 tasks, creates SO-101 env, wraps with EE wrapper, loads SmolVLA, runs inference loop. |
-| `env.py` | LeRobot/EnvHub: `make_env(n_envs, use_async_envs, cfg)` to build the Isaac env as a VectorEnv. |
-| `env_lerobot.py` | Wrapper so the Isaac env presents the `gym.vector.VectorEnv` interface. |
-| `env_wrapper.py` | Gymnasium wrapper: adds EE pose and deltas, exposes `get_ee_state()`, optionally adds EE to obs. |
-| `adapters.py` | Isaac obs → policy frame; policy action → env action (scale/clip). |
+| `src/` | Library modules (`adapters.py`, `env.py`, `env_lerobot.py`, `env_wrapper.py`, `camera_usd_loader.py`). |
+| `scripts/` | Entrypoint scripts (`run_smolvla_isaac.py`, `save_env_cameras.py`, `view_training_cameras.py`). |
+| `docker/` | `Dockerfile` and `docker-compose.yaml`. Build with `cd docker && docker compose build`. |
+| `tools/` | Standalone utilities (`verify_versions.py`). |
+| `isaac_so_arm101/` | **In-repo extension**: SO-100/SO-101 URDFs, reach and lift-cube tasks. Run script adds `isaac_so_arm101/src` to the path to register envs. |
 | `requirements.txt` | Extra deps (lerobot[smolvla], gymnasium, torch, etc.). |
-| `isaac_so_arm101/` | **In-repo extension**: SO-100/SO-101 URDFs (`robots/trs_so101/urdf/so_arm101.urdf`, `trs_so100/urdf/so_arm100.urdf`), reach and lift-cube tasks, train/play scripts. Reused as-is; run script adds `isaac_so_arm101/src` to the path to register envs. |
 | `README.md` | This file. |
 
 Isaac Sim and Isaac Lab are **not** listed in `requirements.txt`; they are installed and run separately. The SO-101 robot and tasks come from the bundled **isaac_so_arm101** extension (original repo: [MuammerBay/isaac_so_arm101](https://github.com/MuammerBay/isaac_so_arm101)).

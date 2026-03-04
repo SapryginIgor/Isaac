@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Output & caches
+output/
+env_camera_samples/
+view_training_cameras/
+*.png
+*.jpg
+*.mp4
+
+# Docker
+docker/Dockerfile
+docker/docker-compose.yaml
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
