@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- Minimal USB plug macro (stub when realsense2_description is not available). -->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:macro name="usb_plug" params="parent name *origin">
+    <!-- Optional USB plug visual omitted for standalone conversion -->
+  </xacro:macro>
+</robot>
