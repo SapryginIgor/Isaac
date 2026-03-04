@@ -8,6 +8,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+import os
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
@@ -115,6 +116,18 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             focus_distance=400.0,
             horizontal_aperture=20.955,
             clipping_range=(0.1, 1.0e5),
+        ),
+    )
+
+    # Intel RealSense D405 (optional): set D405_USD_PATH to override; default urdf/d405.usd from project root
+    d405 = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/D405",
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=[0.5, 0.35, 0.02],
+            rot=[1.0, 0.0, 0.0, 0.0],
+        ),
+        spawn=UsdFileCfg(
+            usd_path=os.environ.get("D405_USD_PATH", "urdf/d405.usd"),
         ),
     )
 
